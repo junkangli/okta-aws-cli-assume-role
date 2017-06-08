@@ -15,6 +15,7 @@ package com.okta.tools;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.auth.BasicSessionCredentials;
 import com.amazonaws.auth.profile.ProfilesConfigFile;
@@ -25,7 +26,8 @@ import com.amazonaws.services.identitymanagement.model.GetPolicyVersionResult;
 import com.amazonaws.services.identitymanagement.model.GetRoleRequest;
 import com.amazonaws.services.identitymanagement.model.GetRoleResult;
 import com.amazonaws.services.identitymanagement.model.Policy;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLRequest;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLResult;
 import com.amazonaws.services.identitymanagement.*;
@@ -136,9 +138,12 @@ public class awscli {
         return httpClient;
     }
 
-    private static AWSSecurityTokenServiceClient buildStsClient(AWSCredentials awsCredentials)
+    private static AWSSecurityTokenService buildStsClient(AWSCredentials awsCredentials)
     {
-        AWSSecurityTokenServiceClient stsClient = null;
+        AWSSecurityTokenServiceClientBuilder stsBuilder = AWSSecurityTokenServiceClientBuilder
+                .standard()
+                .withCredentials(new AWSStaticCredentialsProvider(awsCredentials));
+
         if (proxyHost != null && proxyPort > 0) {
             ClientConfiguration clientConfig = new ClientConfiguration();
             clientConfig.setProxyHost(proxyHost);
@@ -151,11 +156,9 @@ public class awscli {
                 clientConfig.setProxyDomain(proxyDomain);
             }
 
-            stsClient = new AWSSecurityTokenServiceClient(awsCredentials, clientConfig);
-        } else {
-            stsClient = new AWSSecurityTokenServiceClient(awsCredentials);
+            stsBuilder = stsBuilder.withClientConfiguration(clientConfig);
         }
-        return stsClient;
+        return stsBuilder.build();
     }
 
     public static void main(String[] args) throws Exception {
@@ -491,7 +494,7 @@ public class awscli {
         BasicAWSCredentials awsCreds = new BasicAWSCredentials("", "");
 
         //use user credentials to assume AWS role
-        AWSSecurityTokenServiceClient stsClient = buildStsClient(awsCreds);
+        AWSSecurityTokenService sts = buildStsClient(awsCreds);
 
         AssumeRoleWithSAMLRequest assumeRequest = new AssumeRoleWithSAMLRequest()
                 .withPrincipalArn(principalArn)
@@ -499,7 +502,7 @@ public class awscli {
                 .withSAMLAssertion(resultSAML)
                 .withDurationSeconds(3600); //default token duration to 12 hours
 
-        return stsClient.assumeRoleWithSAML(assumeRequest);
+        return sts.assumeRoleWithSAML(assumeRequest);
     }
 
     private static void GetRoleToAssume(String roleName) {
@@ -507,17 +510,22 @@ public class awscli {
         if (roleName != null && !roleName.equals("") && awsIamKey != null && awsIamSecret != null && !awsIamKey.equals("") && !awsIamSecret.equals("")) {
 
             logger.debug("Creating the AWS Identity Management client");
-            AmazonIdentityManagementClient identityManagementClient
-                    = new AmazonIdentityManagementClient(new BasicAWSCredentials(awsIamKey, awsIamSecret));
+            BasicAWSCredentials awsCredentials = new BasicAWSCredentials(awsIamKey, awsIamSecret);
+            AmazonIdentityManagement identityManagement = AmazonIdentityManagementClientBuilder
+                    .standard()
+                    .withCredentials(new AWSStaticCredentialsProvider(
+                            new BasicAWSCredentials(awsIamKey, awsIamSecret)
+                    ))
+                    .build();
 
             logger.debug("Getting role: " + roleName);
-            GetRoleResult roleresult = identityManagementClient.getRole(new GetRoleRequest().withRoleName(roleName));
+            GetRoleResult roleresult = identityManagement.getRole(new GetRoleRequest().withRoleName(roleName));
             logger.debug("GetRoleResult: " + roleresult.toString());
             Role role = roleresult.getRole();
             logger.debug("getRole: " + role.toString());
-            ListAttachedRolePoliciesResult arpr = identityManagementClient.listAttachedRolePolicies(new ListAttachedRolePoliciesRequest().withRoleName(roleName));
+            ListAttachedRolePoliciesResult arpr = identityManagement.listAttachedRolePolicies(new ListAttachedRolePoliciesRequest().withRoleName(roleName));
             logger.debug("ListAttachedRolePoliciesResult: " + arpr.toString());
-            ListRolePoliciesResult lrpr = identityManagementClient.listRolePolicies(new ListRolePoliciesRequest().withRoleName(roleName));
+            ListRolePoliciesResult lrpr = identityManagement.listRolePolicies(new ListRolePoliciesRequest().withRoleName(roleName));
             logger.debug("ListRolePoliciesResult: " + lrpr.toString());
 
             List<String> inlinePolicies = lrpr.getPolicyNames();
@@ -550,11 +558,11 @@ public class awscli {
                 logger.debug("Selected policy " + attachedPolicy.toString());
                 GetPolicyRequest gpr = new GetPolicyRequest().withPolicyArn(attachedPolicy.getPolicyArn());
 
-                GetPolicyResult rpr = identityManagementClient.getPolicy(gpr);
+                GetPolicyResult rpr = identityManagement.getPolicy(gpr);
                 logger.debug("GetPolicyResult: " + attachedPolicy.toString());
                 Policy policy = rpr.getPolicy();
 
-                GetPolicyVersionResult pvr = identityManagementClient.getPolicyVersion(new GetPolicyVersionRequest().withPolicyArn(policy.getArn()).withVersionId(policy.getDefaultVersionId()));
+                GetPolicyVersionResult pvr = identityManagement.getPolicyVersion(new GetPolicyVersionRequest().withPolicyArn(policy.getArn()).withVersionId(policy.getDefaultVersionId()));
                 logger.debug("GetPolicyVersionResult: " + pvr.toString());
 
                 String policyDoc = pvr.getPolicyVersion().getDocument();
@@ -575,7 +583,7 @@ public class awscli {
                 //Have to set the role name and the policy name (both are mandatory fields
                 //TODO: handle more than 1 policy (ask the user to choose it?)
                 GetRolePolicyRequest grpr = new GetRolePolicyRequest().withRoleName(roleName).withPolicyName(inlinePolicies.get(selectedPolicyRank));
-                GetRolePolicyResult rpr = identityManagementClient.getRolePolicy(grpr);
+                GetRolePolicyResult rpr = identityManagement.getRolePolicy(grpr);
                 String policyDoc = rpr.getPolicyDocument();
 
                 roleToAssume = ProcessPolicyDocument(policyDoc);
