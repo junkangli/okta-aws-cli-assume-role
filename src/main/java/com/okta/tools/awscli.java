@@ -78,6 +78,7 @@ public class awscli {
     //User specific variables
     private static String oktaOrg = "";
     private static String oktaAWSAppURL = "";
+    private static String oktaAppLabel = "";
     private static String awsIamKey = null;
     private static String awsIamSecret = null;
     private static AuthApiClient authClient;
@@ -319,6 +320,7 @@ public class awscli {
         oktaAWSAppURL = props.getProperty("OKTA_AWS_APP_URL");
         awsIamKey = props.getProperty("AWS_IAM_KEY");
         awsIamSecret = props.getProperty("AWS_IAM_SECRET");
+        oktaAppLabel = props.getProperty("OKTA_APP_LABEL");
 /*		String line = oktaBr.readLine();
         while(line!=null){
 			if(line.contains("OKTA_ORG")){
@@ -690,7 +692,11 @@ public class awscli {
         String awsSecretKey = temporaryCredentials.getAWSSecretKey();
         String awsSessionToken = temporaryCredentials.getSessionToken();
 
-        if (credentialsProfileName.startsWith("arn:aws:sts::")) {
+        if (oktaAppLabel != null && !oktaAppLabel.isEmpty()) {
+            credentialsProfileName = oktaAppLabel;
+        }
+
+        if(credentialsProfileName.startsWith("arn:aws:sts::")) {
             credentialsProfileName = credentialsProfileName.substring(13);
         }
         if (credentialsProfileName.contains(":assumed-role")) {
