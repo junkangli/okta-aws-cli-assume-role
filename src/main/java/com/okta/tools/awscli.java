@@ -13,6 +13,8 @@
 package com.okta.tools;
 
 import com.amazonaws.AmazonClientException;
+import com.amazonaws.ClientConfiguration;
+import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.auth.BasicSessionCredentials;
 import com.amazonaws.auth.profile.ProfilesConfigFile;
@@ -38,13 +40,20 @@ import com.okta.sdk.framework.ApiClientConfiguration;
 import com.okta.sdk.models.auth.AuthResult;
 import com.okta.sdk.models.factors.Factor;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.NTCredentials;
 import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.ProxyAuthenticationStrategy;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -69,6 +78,7 @@ public class awscli {
     //User specific variables
     private static String oktaOrg = "";
     private static String oktaAWSAppURL = "";
+    private static String oktaAppLabel = "";
     private static String awsIamKey = null;
     private static String awsIamSecret = null;
     private static AuthApiClient authClient;
@@ -83,7 +93,73 @@ public class awscli {
     private static int selectedPolicyRank; //the zero-based rank of the policy selected in the selected cross-account role (in case there is more than one policy tied to the current policy)
     private static final Logger logger = LogManager.getLogger(awscli.class);
 
+    private static String proxyHost;
+    private static int proxyPort;
+    private static String proxyUsername;
+    private static String proxyPassword;
+    private static String proxyDomain;
+    private static String proxyWorkstation;
+
+    private static void getProxySettings() {
+        proxyHost = System.getProperty("http.proxyHost");
+        String proxyPortString = System.getProperty("http.proxyPort");
+        proxyPort = (proxyPortString != null) ? Integer.parseInt(proxyPortString) : -1;
+        proxyUsername = System.getProperty("http.proxyUser");
+        proxyPassword = System.getProperty("http.proxyPassword");
+        proxyDomain = System.getProperty("http.proxyDomain");
+        proxyWorkstation = System.getProperty("http.proxyWorkstation");
+    }
+
+    private static CloseableHttpClient buildHttpClient() {
+        CloseableHttpClient httpClient = null;
+
+        if (proxyHost != null && proxyPort > 0) {
+            System.out.println("Configuring Proxy. Proxy Host: " + proxyHost + " " + "Proxy Port: " + proxyPort);
+            HttpHost proxyHttpHost = new HttpHost(proxyHost, proxyPort);
+            HttpClientBuilder clientBuilder = HttpClientBuilder.create();
+            clientBuilder.useSystemProperties();
+            clientBuilder.setProxy(proxyHttpHost);
+
+            if (proxyUsername != null && proxyPassword != null) {
+                CredentialsProvider credsProvider = new BasicCredentialsProvider();
+                credsProvider.setCredentials(
+                        new AuthScope(proxyHost, proxyPort),
+                        new NTCredentials(proxyUsername, proxyPassword, proxyWorkstation, proxyDomain));
+                clientBuilder.setDefaultCredentialsProvider(credsProvider);
+                clientBuilder.setProxyAuthenticationStrategy(new ProxyAuthenticationStrategy());
+            }
+
+            httpClient = clientBuilder.build();
+        } else {
+            httpClient = HttpClients.createDefault();
+        }
+        return httpClient;
+    }
+
+    private static AWSSecurityTokenServiceClient buildStsClient(AWSCredentials awsCredentials)
+    {
+        AWSSecurityTokenServiceClient stsClient = null;
+        if (proxyHost != null && proxyPort > 0) {
+            ClientConfiguration clientConfig = new ClientConfiguration();
+            clientConfig.setProxyHost(proxyHost);
+            clientConfig.setProxyPort(proxyPort);
+
+            if (proxyUsername != null && proxyPassword != null) {
+                clientConfig.setProxyUsername(proxyUsername);
+                clientConfig.setProxyPassword(proxyPassword);
+                clientConfig.setProxyWorkstation(proxyWorkstation);
+                clientConfig.setProxyDomain(proxyDomain);
+            }
+
+            stsClient = new AWSSecurityTokenServiceClient(awsCredentials, clientConfig);
+        } else {
+            stsClient = new AWSSecurityTokenServiceClient(awsCredentials);
+        }
+        return stsClient;
+    }
+
     public static void main(String[] args) throws Exception {
+        getProxySettings();
         awsSetup();
         extractCredentials();
 
@@ -178,7 +254,7 @@ public class awscli {
     /*Uses user's credentials to obtain Okta session Token */
     private static CloseableHttpResponse authnticateCredentials(String username, String password) throws JSONException, ClientProtocolException, IOException {
         HttpPost httpost = null;
-        CloseableHttpClient httpClient = HttpClients.createDefault();
+        CloseableHttpClient httpClient = buildHttpClient();
 
 
         //HTTP Post request to Okta API for session token
@@ -244,6 +320,7 @@ public class awscli {
         oktaAWSAppURL = props.getProperty("OKTA_AWS_APP_URL");
         awsIamKey = props.getProperty("AWS_IAM_KEY");
         awsIamSecret = props.getProperty("AWS_IAM_SECRET");
+        oktaAppLabel = props.getProperty("OKTA_APP_LABEL");
 /*		String line = oktaBr.readLine();
         while(line!=null){
 			if(line.contains("OKTA_ORG")){
@@ -335,7 +412,7 @@ public class awscli {
     private static String awsSamlHandler(String oktaSessionToken) throws ClientProtocolException, IOException {
         HttpGet httpget = null;
         CloseableHttpResponse responseSAML = null;
-        CloseableHttpClient httpClient = HttpClients.createDefault();
+        CloseableHttpClient httpClient = buildHttpClient();
         String resultSAML = "";
         String outputSAML = "";
 
@@ -414,7 +491,7 @@ public class awscli {
         BasicAWSCredentials awsCreds = new BasicAWSCredentials("", "");
 
         //use user credentials to assume AWS role
-        AWSSecurityTokenServiceClient stsClient = new AWSSecurityTokenServiceClient(awsCreds);
+        AWSSecurityTokenServiceClient stsClient = buildStsClient(awsCreds);
 
         AssumeRoleWithSAMLRequest assumeRequest = new AssumeRoleWithSAMLRequest()
                 .withPrincipalArn(principalArn)
@@ -615,7 +692,11 @@ public class awscli {
         String awsSecretKey = temporaryCredentials.getAWSSecretKey();
         String awsSessionToken = temporaryCredentials.getSessionToken();
 
-        if (credentialsProfileName.startsWith("arn:aws:sts::")) {
+        if (oktaAppLabel != null && !oktaAppLabel.isEmpty()) {
+            credentialsProfileName = oktaAppLabel;
+        }
+
+        if(credentialsProfileName.startsWith("arn:aws:sts::")) {
             credentialsProfileName = credentialsProfileName.substring(13);
         }
         if (credentialsProfileName.contains(":assumed-role")) {
@@ -1023,7 +1104,7 @@ public class awscli {
 
         //create post request
         CloseableHttpResponse responseAuthenticate = null;
-        CloseableHttpClient httpClient = HttpClients.createDefault();
+        CloseableHttpClient httpClient = buildHttpClient();
 
         HttpPost httpost = new HttpPost(verifyPoint);
         httpost.addHeader("Accept", "application/json");
@@ -1080,7 +1161,7 @@ public class awscli {
                 while (pushResult == null || pushResult.equals("WAITING")) {
                     pushResult = null;
                     CloseableHttpResponse responsePush = null;
-                    httpClient = HttpClients.createDefault();
+                    httpClient = buildHttpClient();
 
                     HttpPost pollReq = new HttpPost(pollUrl);
                     pollReq.addHeader("Accept", "application/json");
