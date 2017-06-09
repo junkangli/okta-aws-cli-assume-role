@@ -299,7 +299,7 @@ public class awscli {
             f.getParentFile().mkdirs();
 
             PrintWriter writer = new PrintWriter(f, "UTF-8");
-            writer.println("[profile default]");
+            writer.println("[default]");
             writer.println("output = json");
             writer.println("region = us-east-1");
             writer.close();
