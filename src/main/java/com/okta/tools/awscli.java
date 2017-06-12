@@ -299,7 +299,7 @@ public class awscli {
             f.getParentFile().mkdirs();
 
             PrintWriter writer = new PrintWriter(f, "UTF-8");
-            writer.println("[profile default]");
+            writer.println("[default]");
             writer.println("output = json");
             writer.println("region = us-east-1");
             writer.close();
@@ -702,18 +702,18 @@ public class awscli {
 
         if (oktaAppLabel != null && !oktaAppLabel.isEmpty()) {
             credentialsProfileName = oktaAppLabel;
-        }
+        } else {
+            if (credentialsProfileName.startsWith("arn:aws:sts::")) {
+                credentialsProfileName = credentialsProfileName.substring(13);
+            }
+            if (credentialsProfileName.contains(":assumed-role")) {
+                credentialsProfileName = credentialsProfileName.replaceAll(":assumed-role", "");
+            }
 
-        if(credentialsProfileName.startsWith("arn:aws:sts::")) {
-            credentialsProfileName = credentialsProfileName.substring(13);
+            Object[] args = {new String(credentialsProfileName), selectedPolicyRank};
+            MessageFormat profileNameFormat = new MessageFormat("{0}/{1}");
+            credentialsProfileName = profileNameFormat.format(args);
         }
-        if (credentialsProfileName.contains(":assumed-role")) {
-            credentialsProfileName = credentialsProfileName.replaceAll(":assumed-role", "");
-        }
-
-        Object[] args = {new String(credentialsProfileName), selectedPolicyRank};
-        MessageFormat profileNameFormat = new MessageFormat("{0}/{1}");
-        credentialsProfileName = profileNameFormat.format(args);
 
         //update the credentials file with the unique profile name
         UpdateCredentialsFile(credentialsProfileName, awsAccessKey, awsSecretKey, awsSessionToken);
@@ -868,7 +868,11 @@ public class awscli {
 
     public static void WriteNewRoleToAssume(PrintWriter pw, String profileName, String roleToAssume) {
 
-        pw.println("[profile " + profileName + "]");
+        if (profileName == DefaultProfileName) {
+            pw.println("[" + profileName + "]");
+        } else {
+            pw.println("[profile " + profileName + "]");
+        }
         if (roleToAssume != null && !roleToAssume.equals(""))
             pw.println("role_arn=" + roleToAssume);
         pw.println("source_profile=" + profileName);
