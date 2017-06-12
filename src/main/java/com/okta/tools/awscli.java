@@ -702,18 +702,18 @@ public class awscli {
 
         if (oktaAppLabel != null && !oktaAppLabel.isEmpty()) {
             credentialsProfileName = oktaAppLabel;
-        }
+        } else {
+            if (credentialsProfileName.startsWith("arn:aws:sts::")) {
+                credentialsProfileName = credentialsProfileName.substring(13);
+            }
+            if (credentialsProfileName.contains(":assumed-role")) {
+                credentialsProfileName = credentialsProfileName.replaceAll(":assumed-role", "");
+            }
 
-        if(credentialsProfileName.startsWith("arn:aws:sts::")) {
-            credentialsProfileName = credentialsProfileName.substring(13);
+            Object[] args = {new String(credentialsProfileName), selectedPolicyRank};
+            MessageFormat profileNameFormat = new MessageFormat("{0}/{1}");
+            credentialsProfileName = profileNameFormat.format(args);
         }
-        if (credentialsProfileName.contains(":assumed-role")) {
-            credentialsProfileName = credentialsProfileName.replaceAll(":assumed-role", "");
-        }
-
-        Object[] args = {new String(credentialsProfileName), selectedPolicyRank};
-        MessageFormat profileNameFormat = new MessageFormat("{0}/{1}");
-        credentialsProfileName = profileNameFormat.format(args);
 
         //update the credentials file with the unique profile name
         UpdateCredentialsFile(credentialsProfileName, awsAccessKey, awsSecretKey, awsSessionToken);
