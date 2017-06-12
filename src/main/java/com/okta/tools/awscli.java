@@ -868,7 +868,11 @@ public class awscli {
 
     public static void WriteNewRoleToAssume(PrintWriter pw, String profileName, String roleToAssume) {
 
-        pw.println("[profile " + profileName + "]");
+        if (profileName == DefaultProfileName) {
+            pw.println("[" + profileName + "]");
+        } else {
+            pw.println("[profile " + profileName + "]");
+        }
         if (roleToAssume != null && !roleToAssume.equals(""))
             pw.println("role_arn=" + roleToAssume);
         pw.println("source_profile=" + profileName);
