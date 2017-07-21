@@ -770,15 +770,21 @@ public class awscli {
         WriteNewProfile(pw, profileNameLine, awsAccessKey, awsSecretKey, awsSessionToken);
 
         String line = null;
-        int lineCounter = 0;
         boolean bFileStart = true;
 
         //second, we're copying all the other profile from the original credentials file
         while ((line = br.readLine()) != null) {
 
-            if (line.equalsIgnoreCase(profileNameLine) || (lineCounter > 0 && lineCounter < 4)) {
-                //we found the line we must replace and we will skip 3 additional lines
-                ++lineCounter;
+            if (line.equalsIgnoreCase(profileNameLine)) {
+                //we found the section we must replace but we don't necessarily know how many lines we need to skip
+                while ((line = br.readLine()) != null) {
+                    if (line.startsWith("[")) {
+                        //this is a new profile line, so we're copying it
+                        pw.println(); //but not before we're adding a separator line
+                        pw.println(line);
+                        break;
+                    }
+                }
             } else {
                 if ((!line.equalsIgnoreCase("") && !line.equalsIgnoreCase("\n"))) {
                     if (line.startsWith("[")) {
